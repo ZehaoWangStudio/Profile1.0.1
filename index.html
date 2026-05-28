@@ -310,6 +310,11 @@
       scroll-margin-top: calc(var(--header-h) + 28px);
     }
 
+    #overview,
+    #contact {
+      scroll-margin-top: calc(var(--header-h) + 28px);
+    }
+
     .section:first-of-type {
       border-top: 0;
     }
@@ -5808,6 +5813,20 @@
       });
     }
 
+    function isHomeCardTarget(hash) {
+      return typeof hash === "string" && hash.startsWith("#home-card-");
+    }
+
+    function isHomeTopTarget(hash) {
+      return !hash || hash === "#overview";
+    }
+
+    function getHomeScrollBlock(targetHash, options = {}) {
+      if (options.block) return options.block;
+      if (isHomeCardTarget(targetHash)) return "center";
+      return "start";
+    }
+
     function showDetail(key, options = {}) {
       renderDetail(key);
       homeView.classList.add("is-hidden");
@@ -5830,7 +5849,7 @@
       });
     }
 
-    function showHome(hash) {
+    function showHome(hash, options = {}) {
       cleanupPassageTocFollow();
       detailView.classList.add("is-hidden");
       homeView.classList.remove("is-hidden");
@@ -5838,16 +5857,20 @@
       progressBar.style.width = "0%";
       const targetHash = hash && hash.startsWith("#") ? hash : "#overview";
       const target = document.querySelector(targetHash);
+      const block = getHomeScrollBlock(targetHash, options);
       requestAnimationFrame(() => {
-        if (target) {
-          jumpToElementInstant(target, "center");
+        if (options.forceTop || isHomeTopTarget(targetHash)) {
+          jumpToTopInstant();
+        } else if (target) {
+          jumpToElementInstant(target, block);
         } else {
           jumpToTopInstant();
         }
+        updateChrome();
       });
     }
 
-    function handleRoute() {
+    function handleRoute(options = {}) {
       const key = decodeURIComponent(location.hash.replace("#", ""));
       const state = history.state || {};
 
@@ -5856,10 +5879,14 @@
           detailScrollTarget: state.detailScrollTarget || null
         });
       } else {
+        const hasHash = Boolean(location.hash);
         const target =
           state.scrollTarget ||
-          (location.hash && location.hash.startsWith("#") ? location.hash : "#overview");
-        showHome(target);
+          (hasHash && location.hash.startsWith("#") ? location.hash : "#overview");
+        showHome(target, {
+          block: state.scrollBlock || null,
+          forceTop: options.forceTop || !hasHash || target === "#overview"
+        });
       }
       closeMenu();
     }
@@ -5920,6 +5947,24 @@
       });
     }
 
+    function navigateToHomeSection(hash) {
+      if (!hash || !hash.startsWith("#")) return;
+      const target = document.querySelector(hash);
+      if (!target && hash !== "#overview") return;
+
+      const state = {
+        view: "home",
+        scrollTarget: hash,
+        scrollBlock: "start"
+      };
+
+      history.pushState(state, "", hash);
+      showHome(hash, {
+        block: "start",
+        forceTop: hash === "#overview"
+      });
+    }
+
     function closeMenu() {
       menuToggle.classList.remove("is-open");
       siteNav.classList.remove("is-open");
@@ -5936,16 +5981,15 @@
     siteNav.addEventListener("click", event => {
       const link = event.target.closest("a");
       if (!link) return;
-      closeMenu();
       const href = link.getAttribute("href");
-      if (document.body.classList.contains("is-detail") && href && href.startsWith("#") && !detailData[href.slice(1)]) {
+      closeMenu();
+
+      if (!href || !href.startsWith("#")) return;
+
+      const key = decodeURIComponent(href.slice(1));
+      if (!detailData[key]) {
         event.preventDefault();
-        history.pushState(
-          { view: "home", scrollTarget: href },
-          "",
-          href
-        );
-        showHome(href);
+        navigateToHomeSection(href);
       }
     });
 
@@ -5958,7 +6002,21 @@
       if (!href || href === "#") return;
 
       const key = decodeURIComponent(href.slice(1));
-      if (!detailData[key]) return;
+      if (!detailData[key]) {
+        if (
+          !link.closest(".nav") &&
+          !link.hasAttribute("data-detail-anchor") &&
+          !link.hasAttribute("data-passage-anchor")
+        ) {
+          const target = document.querySelector(href);
+          if (target || href === "#overview") {
+            event.preventDefault();
+            closeMenu();
+            navigateToHomeSection(href);
+          }
+        }
+        return;
+      }
 
       event.preventDefault();
       closeMenu();
@@ -6010,13 +6068,15 @@
           location.hash
         );
       } else {
+        const initialHomeHash = location.hash || "#overview";
         history.replaceState(
           {
             view: "home",
-            scrollTarget: location.hash || "#overview"
+            scrollTarget: initialHomeHash,
+            scrollBlock: isHomeCardTarget(initialHomeHash) ? "center" : "start"
           },
           "",
-          location.hash || "#overview"
+          location.hash || location.href
         );
       }
     }
@@ -6032,7 +6092,7 @@
     protectImages(document);
     prepareReveals(document);
     updateChrome();
-    handleRoute();
+    handleRoute({ forceTop: !location.hash || location.hash === "#overview" });
   </script>
 </body>
 </html>
